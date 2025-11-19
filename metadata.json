@@ -1,0 +1,5 @@
+{
+  "name": "DDD Tools: Label & Mix",
+  "description": "A web-based application to generate product labels and calculate ingredient mixtures for batch production, combining two essential tools into one interface.",
+  "requestFramePermissions": []
+}
