@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { Product, CompanySettings } from '../../domain/types';
+import type { Product, CompanySettings, Recipe } from '../../domain/types';
 import { storageService } from '../../services/storageService';
 
 const FIXED_RATE = 1.95583;
@@ -8,11 +8,16 @@ const FIXED_RATE = 1.95583;
 const ProductManager: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'products' | 'settings'>('products');
     const [products, setProducts] = useState<Product[]>([]);
-    const [settings, setSettings] = useState<CompanySettings>({ companyName: '', companyEmail: '', companyPhone: '' });
+    const [recipes, setRecipes] = useState<Recipe[]>([]);
+    const [settings, setSettings] = useState<CompanySettings>({ 
+        companyName: '', companyEmail: '', companyPhone: '',
+        vatRate: 0.20, defaultMargin: 0.30, rawPricesIncludeVat: true, schemaVersion: 1
+    });
     
     // Product Form State
     const [form, setForm] = useState({
         id: '',
+        recipeId: '',
         name: '',
         priceBgn: '', // Input is text to allow decimals during typing
         barcode: '',
@@ -20,10 +25,24 @@ const ProductManager: React.FC = () => {
     });
     const [liveEur, setLiveEur] = useState<string>('0.00');
     const [showPreview, setShowPreview] = useState(false);
+    
+    // Settings Form State (Local strings for easy editing)
+    const [settingsForm, setSettingsForm] = useState({
+        vat: '20',
+        margin: '30',
+        rawVat: true
+    });
 
     useEffect(() => {
         setProducts(storageService.getProducts());
-        setSettings(storageService.getCompanySettings());
+        setRecipes(storageService.getRecipes());
+        const s = storageService.getCompanySettings();
+        setSettings(s);
+        setSettingsForm({
+            vat: (s.vatRate * 100).toString(),
+            margin: (s.defaultMargin * 100).toString(),
+            rawVat: s.rawPricesIncludeVat
+        });
     }, []);
 
     // Live Currency Calc
@@ -44,15 +63,27 @@ const ProductManager: React.FC = () => {
     const handleProductSelect = (p: Product) => {
         setForm({
             id: p.id,
+            recipeId: p.recipeId || '',
             name: p.name,
             priceBgn: p.price.toFixed(2),
             barcode: p.barcode,
             labelInfo: p.labelType
         });
     };
+    
+    const handleRecipeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const rid = e.target.value;
+        const recipe = recipes.find(r => r.id === rid);
+        setForm(prev => ({
+            ...prev,
+            recipeId: rid,
+            // Auto-fill name from recipe if found
+            name: recipe ? recipe.name : prev.name
+        }));
+    };
 
     const clearProductForm = () => {
-        setForm({ id: '', name: '', priceBgn: '', barcode: '', labelInfo: '' });
+        setForm({ id: '', recipeId: '', name: '', priceBgn: '', barcode: '', labelInfo: '' });
     };
 
     const saveProduct = () => {
@@ -67,19 +98,21 @@ const ProductManager: React.FC = () => {
         }
 
         let updated: Product[];
+        const newProductData: Product = {
+            id: form.id || Date.now().toString(),
+            recipeId: form.recipeId,
+            name: form.name,
+            price: priceNum,
+            barcode: form.barcode,
+            labelType: form.labelInfo
+        };
+
         if (form.id) {
-            updated = products.map(p => p.id === form.id ? {
-                ...p, name: form.name, price: priceNum, barcode: form.barcode, labelType: form.labelInfo
-            } : p);
+            updated = products.map(p => p.id === form.id ? newProductData : p);
         } else {
-            updated = [...products, {
-                id: Date.now().toString(),
-                name: form.name,
-                price: priceNum,
-                barcode: form.barcode,
-                labelType: form.labelInfo
-            }];
+            updated = [...products, newProductData];
         }
+        
         storageService.saveProducts(updated);
         setProducts(updated);
         if (!form.id) clearProductForm();
@@ -97,14 +130,25 @@ const ProductManager: React.FC = () => {
     };
 
     const saveSettings = () => {
-        storageService.saveCompanySettings(settings);
+        const vat = parseFloat(settingsForm.vat);
+        const margin = parseFloat(settingsForm.margin);
+        
+        if (isNaN(vat) || isNaN(margin)) {
+            alert("Моля въведете валидни числа за ДДС и Марж.");
+            return;
+        }
+        
+        const newSettings: CompanySettings = {
+            ...settings,
+            vatRate: vat / 100,
+            defaultMargin: margin / 100,
+            rawPricesIncludeVat: settingsForm.rawVat
+        };
+        
+        storageService.saveCompanySettings(newSettings);
+        setSettings(newSettings);
         alert("Настройките са запазени.");
     };
-
-    const getSafePriceDisplay = () => {
-        const val = parseFloat(form.priceBgn.replace(',', '.'));
-        return isNaN(val) ? '0.00' : val.toFixed(2);
-    }
 
     const handlePrintLabel = () => {
         const printWindow = window.open('', '', 'width=600,height=800');
@@ -115,9 +159,6 @@ const ProductManager: React.FC = () => {
 
         const priceVal = parseFloat(form.priceBgn.replace(',', '.'));
         const priceDisplay = isNaN(priceVal) ? '0.00' : priceVal.toFixed(2);
-        const eurDisplay = isNaN(priceVal) ? '0.00' : (priceVal / FIXED_RATE).toFixed(2);
-        
-        const companyNameDisplay = settings.companyName ? settings.companyName : 'ИМЕ НА ФИРМА';
         
         const styles = `
             <style>
@@ -147,7 +188,7 @@ const ProductManager: React.FC = () => {
                 .barcode-lines { height: 12mm; background: repeating-linear-gradient(90deg, black, black 2px, white 2px, white 4px); width: 70%; margin: 0 auto 1mm auto; }
                 .barcode-text { font-family: monospace; font-size: 12pt; letter-spacing: 2px; }
                 
-                .footer { width: 100%; border-top: 1px solid #ccc; padding-top: 2mm; font-size: 8pt; color: #555; margin-top: 3mm;}
+                .footer { width: 100%; border-top: 1px solid #ccc; pt: 2mm; font-size: 8pt; color: #555; margin-top: 3mm;}
             </style>
         `;
         
@@ -157,7 +198,7 @@ const ProductManager: React.FC = () => {
             <body>
                 <div class="container">
                     <div class="header">
-                        <div class="company-name">${companyNameDisplay}</div>
+                        <div class="company-name">${settings.companyName || 'COMPANY NAME'}</div>
                     </div>
                     
                     <div class="product-name">${form.name}</div>
@@ -167,7 +208,7 @@ const ProductManager: React.FC = () => {
                     <div class="price-box">
                         <div class="price-label">ЦЕНА / PRICE</div>
                         <div class="price-main">${priceDisplay} <span style="font-size: 20pt;">ЛВ.</span></div>
-                        <div class="price-sub">${eurDisplay} EUR</div>
+                        <div class="price-sub">${liveEur} EUR</div>
                     </div>
                     
                     ${form.barcode ? `
@@ -220,8 +261,23 @@ const ProductManager: React.FC = () => {
                             
                             <div className="space-y-3">
                                 <div>
+                                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Свържи с Рецепта / Link Recipe</label>
+                                    <select 
+                                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                        value={form.recipeId}
+                                        onChange={handleRecipeChange}
+                                    >
+                                        <option value="">-- Свободен текст / Без рецепта --</option>
+                                        {recipes.map(r => (
+                                            <option key={r.id} value={r.id}>{r.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
                                     <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Име / Name</label>
                                     <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                                    {form.recipeId && <p className="text-xs text-gray-500 mt-1">Името се попълва автоматично от рецептата.</p>}
                                 </div>
                                 
                                 <div>
@@ -237,7 +293,10 @@ const ProductManager: React.FC = () => {
                                 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Инфо / Label Info</label>
-                                    <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.labelInfo} onChange={e => setForm({...form, labelInfo: e.target.value})} />
+                                    <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.labelInfo} onChange={e => setForm({...form, labelInfo: e.target.value})} placeholder="Напр. Ръчна изработка..." />
+                                    <p className="text-xs text-gray-500 mt-1 italic">
+                                        Тук въведете само допълнителен текст. Името на фирмата и цената се добавят автоматично от системата.
+                                    </p>
                                 </div>
                             </div>
 
@@ -293,26 +352,64 @@ const ProductManager: React.FC = () => {
                 )}
 
                 {activeTab === 'settings' && (
-                    <div className="max-w-xl mx-auto bg-gray-50 p-8 rounded border border-gray-200">
-                        <h3 className="text-xl font-bold text-gray-800 mb-6 border-b pb-2">Данни за фирмата / Company Details</h3>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Име на фирма / Company Name</label>
-                                <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settings.companyName} onChange={e => setSettings({...settings, companyName: e.target.value})} />
+                    <div className="max-w-3xl mx-auto">
+                        <div className="grid md:grid-cols-2 gap-8">
+                            {/* COMPANY DATA */}
+                            <div className="bg-gray-50 p-6 rounded border border-gray-200">
+                                <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Данни за фирмата / Company</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Име на фирма</label>
+                                        <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settings.companyName} onChange={e => setSettings({...settings, companyName: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Имейл</label>
+                                        <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settings.companyEmail} onChange={e => setSettings({...settings, companyEmail: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Телефон</label>
+                                        <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settings.companyPhone} onChange={e => setSettings({...settings, companyPhone: e.target.value})} />
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Имейл / Email</label>
-                                <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settings.companyEmail} onChange={e => setSettings({...settings, companyEmail: e.target.value})} />
+
+                            {/* FINANCIAL SETTINGS */}
+                            <div className="bg-blue-50 p-6 rounded border border-blue-200">
+                                <h3 className="text-lg font-bold text-blue-900 mb-4 border-b border-blue-200 pb-2">Финанси и Калкулации</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">ДДС Ставка (%)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input type="number" className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settingsForm.vat} onChange={e => setSettingsForm({...settingsForm, vat: e.target.value})} />
+                                            <span className="font-bold text-gray-500">%</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Марж на печалба по подразбиране (%)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input type="number" className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settingsForm.margin} onChange={e => setSettingsForm({...settingsForm, margin: e.target.value})} />
+                                            <span className="font-bold text-gray-500">%</span>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">Начислява се върху себестойността преди ДДС.</p>
+                                    </div>
+                                    
+                                    <div className="pt-2 border-t border-blue-200">
+                                        <label className="flex items-start gap-3 cursor-pointer">
+                                            <input type="checkbox" className="mt-1 h-4 w-4 text-blue-600" checked={settingsForm.rawVat} onChange={e => setSettingsForm({...settingsForm, rawVat: e.target.checked})} />
+                                            <div>
+                                                <span className="block text-sm font-bold text-gray-800">Входните цени са с ДДС</span>
+                                                <span className="block text-xs text-gray-600">Ако е включено, когато въвеждате цена за суровина, системата автоматично ще извади ДДС-то преди запис, за да получи НЕТНА себестойност.</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Телефон / Phone</label>
-                                <input className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={settings.companyPhone} onChange={e => setSettings({...settings, companyPhone: e.target.value})} />
-                            </div>
-                            <div className="pt-4 text-right">
-                                <button onClick={saveSettings} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 transition-colors">
-                                    ЗАПАЗИ НАСТРОЙКИТЕ / SAVE SETTINGS
-                                </button>
-                            </div>
+                        </div>
+
+                        <div className="pt-6 text-right">
+                            <button onClick={saveSettings} className="px-8 py-3 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 transition-colors shadow-lg">
+                                ЗАПАЗИ ВСИЧКИ НАСТРОЙКИ / SAVE ALL
+                            </button>
                         </div>
                     </div>
                 )}
@@ -331,7 +428,7 @@ const ProductManager: React.FC = () => {
                                 
                                 {/* 1. Header: Company */}
                                 <div className="w-full border-b border-gray-400 pb-2 mb-4">
-                                    <h2 className="text-xl font-bold text-gray-800 uppercase">{settings.companyName || 'ИМЕ НА ФИРМА'}</h2>
+                                    <h2 className="text-xl font-bold text-gray-800 uppercase">{settings.companyName || 'Company Name'}</h2>
                                 </div>
 
                                 {/* 2. Product Name */}
@@ -350,7 +447,7 @@ const ProductManager: React.FC = () => {
                                 <div className="border-4 border-gray-800 p-4 w-4/5 mb-auto mt-2 bg-white">
                                     <div className="text-sm font-bold text-gray-500 mb-1 uppercase tracking-wider">ЦЕНА / PRICE</div>
                                     <div className="text-5xl font-black text-red-600 mb-1 leading-none">
-                                        {getSafePriceDisplay()} <span className="text-2xl align-top">ЛВ.</span>
+                                        {(parseFloat(form.priceBgn.replace(',', '.')) || 0).toFixed(2)} <span className="text-2xl align-top">ЛВ.</span>
                                     </div>
                                     <div className="text-2xl font-bold text-blue-700">
                                         ({liveEur} €)

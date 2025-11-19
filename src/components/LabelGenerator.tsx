@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import type { Batch, ReprintLog, RawMaterialDefinition, Recipe, CompanySettings } from '../domain/types';
+import type { Batch, ReprintLog, RawMaterialDefinition, Recipe, CompanySettings, Product } from '../domain/types';
 import type { CurrentUser } from './App';
 import { storageService } from '../services/storageService';
 import { getLabelInfo, formatIngredients } from '../domain/labelDomain';
@@ -33,9 +33,11 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
   const [savedBatches, setSavedBatches] = useState<Batch[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [materialDefinitions, setMaterialDefinitions] = useState<RawMaterialDefinition[]>([]);
-  const [companySettings, setCompanySettings] = useState<CompanySettings>({ companyName: '', companyEmail: '', companyPhone: '' });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+  const [linkedProductId, setLinkedProductId] = useState<string>(''); // To link batch to product
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [loadedBatch, setLoadedBatch] = useState<Batch | null>(null);
   
@@ -49,13 +51,14 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
       setSavedBatches(storageService.getBatches());
       setMaterialDefinitions(storageService.getRawMaterials());
       setRecipes(storageService.getRecipes());
+      setProducts(storageService.getProducts());
       setCompanySettings(storageService.getCompanySettings());
   }, []);
 
   useEffect(() => {
     loadData();
     const handleStorageUpdate = (event: StorageEvent) => {
-        if (['ddd_batches', 'ddd_reprint_logs', 'ddd_raw_material_definitions', 'ddd_recipes', 'ddd_company_settings'].includes(event.key || '')) {
+        if (['ddd_batches', 'ddd_reprint_logs', 'ddd_raw_material_definitions', 'ddd_recipes', 'ddd_company_settings', 'ddd_products'].includes(event.key || '')) {
             loadData();
         }
     };
@@ -78,8 +81,23 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
       const ingInfo = formatIngredients(batch, materialDefinitions, language);
       info.ingredientsText = ingInfo.text;
       info.hasAllergens = ingInfo.hasAllergens;
+      
+      // Override title if product is linked
+      if (linkedProductId) {
+          const prod = products.find(p => p.id === linkedProductId);
+          if (prod) {
+              // Use product name for title if desired, or keep recipe name logic.
+              // Usually label title is specific. Let's append product name if different?
+              // For now, we let the ProductManager handle official naming, but the label might need the specific tech name.
+              // Let's assume Product Name overrides Batch Type in the title construction if we wanted, 
+              // but getLabelInfo uses Recipe Name. 
+              // Let's just trust the recipe for the technical description, but maybe use Product Name as the big Header?
+              // For this implementation, we will stick to recipe logic for the technical text, 
+              // but the Price comes from the product.
+          }
+      }
       return info;
-  }, [recipes, materialDefinitions]);
+  }, [recipes, materialDefinitions, linkedProductId, products]);
 
   const generateQRCodes = (prodName?: string, bCode?: string) => {
       const pName = prodName || productName;
@@ -103,6 +121,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
     setLoadedBatch(batch);
     setStatus(`Заредена партида: ${batch.batchName}`);
     generateQRCodes(batch.batchType, batch.batchName);
+    setLinkedProductId(''); // Reset linked product on new batch load
     
     setOverrideMinutes(batch.labelDurationMinutesPerTabletOverride 
         ? batch.labelDurationMinutesPerTabletOverride.toString() 
@@ -122,6 +141,15 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
       setLoadedBatch(updatedBatch);
       setStatus(`Запазена корекция на време за партида ${updatedBatch.batchName}`);
   };
+  
+  // Determine price to show
+  const getDisplayPrice = (): number | undefined => {
+      if (linkedProductId) {
+          const p = products.find(x => x.id === linkedProductId);
+          if (p) return p.price;
+      }
+      return loadedBatch?.recommendedSellPrice;
+  };
 
   const handlePrint = () => {
     if (!loadedBatch) {
@@ -140,14 +168,15 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
         return;
     }
     
-    const companyInfo = [
+    const companyInfo = companySettings ? [
         companySettings.companyName,
         companySettings.companyPhone,
         companySettings.companyEmail
-    ].filter(Boolean).join(' | ');
+    ].filter(Boolean).join(' | ') : '';
 
-    const priceInfo = showPrice && loadedBatch.recommendedSellPrice 
-        ? `<div style="margin-top: 1mm; font-weight: bold; font-size: 8pt;">Цена: ${loadedBatch.recommendedSellPrice.toFixed(2)} лв.</div>` 
+    const finalPrice = getDisplayPrice();
+    const priceInfo = showPrice && finalPrice
+        ? `<div style="margin-top: 1mm; font-weight: bold; font-size: 8pt;">Цена: ${finalPrice.toFixed(2)} лв.</div>` 
         : '';
 
     const styles = `
@@ -207,6 +236,9 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
     const previewInfoBg = getPreviewInfo(loadedBatch, 'bg');
     const previewInfoEn = getPreviewInfo(loadedBatch, 'en');
 
+    // If linked product exists, we might want to use its name for the QR code or Header?
+    // For now, keeping the logic simple as requested.
+    
     const ingredientsHtmlBg = previewInfoBg.ingredientsText;
     const ingredientsHtmlEn = previewInfoEn.ingredientsText;
     const hasAllergens = previewInfoBg.hasAllergens;
@@ -313,6 +345,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
   const isTestBatchApproved = isBatchMarkedAsTest && !!loadedBatch?.testApprovalOrderNumber;
   const previewInfoBg = loadedBatch ? getPreviewInfo(loadedBatch, 'bg') : null;
   const previewInfoEn = loadedBatch ? getPreviewInfo(loadedBatch, 'en') : null;
+  const finalDisplayPrice = getDisplayPrice();
 
   return (
     <div className="bg-white p-6 sm:p-8 rounded-b-lg shadow-lg">
@@ -328,8 +361,21 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
                 {savedBatches.map(batch => (<option key={batch.id} value={batch.id}>{batch.id} • {batch.batchType} • {batch.tabletCount} бр.</option>))}
               </select>
           </div>
+          
+          {/* Linked Product Selector */}
           <div>
-            <label className="block text-sm mb-1 font-medium text-gray-600">Име на продукта</label>
+            <label className="block text-sm mb-1 font-medium text-blue-700">Свържи с Продукт (за цена и име)</label>
+            <select value={linkedProductId} onChange={e => setLinkedProductId(e.target.value)} disabled={!loadedBatch} className="w-full p-2 rounded border border-blue-300 bg-blue-50">
+                <option value="">-- Използвай данните от партидата --</option>
+                {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.price.toFixed(2)} лв)</option>
+                ))}
+            </select>
+            {linkedProductId && <p className="text-xs text-blue-600 mt-1">Цената ще бъде взета от избрания продукт.</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1 font-medium text-gray-600">Име на продукта (Партида)</label>
             <input type="text" value={productName} readOnly className="w-full p-2 rounded border border-gray-300 bg-gray-200" />
           </div>
           <div>
@@ -388,8 +434,8 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
                  {previewInfoBg.hasAllergens && <p className="mt-1">⚠ – потенциален алерген</p>}
                  <p><strong>UFI:</strong> {loadedBatch.ufi}</p>
                  <p><strong>Срок на годност:</strong> до {expDate}</p>
-                 {showPrice && loadedBatch.recommendedSellPrice && (
-                    <p className="mt-1 font-bold">Цена: {loadedBatch.recommendedSellPrice.toFixed(2)} лв.</p>
+                 {showPrice && finalDisplayPrice && (
+                    <p className="mt-1 font-bold">Цена: {finalDisplayPrice.toFixed(2)} лв.</p>
                  )}
 
                 <hr className="my-2 border-dashed"/>

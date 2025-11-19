@@ -5,19 +5,22 @@ import {
     RawMaterialDefinition, 
     RawMaterialLot, 
     Recipe, 
-    RecipeIngredient 
+    RecipeIngredient,
+    CompanySettings
 } from './types';
 
 /**
  * Scales recipe ingredients to match target tablet weight and count,
  * then allocates actual lots from inventory.
+ * Uses settings to calculate Gross Price (Price + Margin + VAT).
  */
 export function calculateMix(
     recipe: Recipe,
     tabletCount: number,
     targetTabletWeight: number,
     definitions: RawMaterialDefinition[],
-    lots: RawMaterialLot[]
+    lots: RawMaterialLot[],
+    settings: CompanySettings
 ): CalculationResult | null {
 
     if (!recipe.recipe || recipe.recipe.length === 0) return null;
@@ -62,6 +65,7 @@ export function calculateMix(
             if (neededGrams <= 0) break;
             
             const toTake = Math.min(neededGrams, lot.availableGrams);
+            // pricePerKg in Lot should be NET price
             const costForPortion = (toTake / 1000) * lot.pricePerKg;
             
             calculatedTotalCost += costForPortion;
@@ -83,8 +87,14 @@ export function calculateMix(
     // 3. Calculate Financials
     const costPerTablet = tabletCount > 0 ? calculatedTotalCost / tabletCount : 0;
     const tabletsPer25g = totalTabletWeight > 0 ? 25 / totalTabletWeight : 0;
-    const costPer25gPackage = costPerTablet * tabletsPer25g;
-    const recommendedSellPrice = costPer25gPackage * 1.30; // +30% margin
+    const costPer25gPackage = costPerTablet * tabletsPer25g; // NET Cost
+    
+    // Apply Margin and VAT
+    const margin = settings.defaultMargin ?? 0.30;
+    const vat = settings.vatRate ?? 0.20;
+    
+    const netSellPrice = costPer25gPackage * (1 + margin);
+    const recommendedSellPrice = netSellPrice * (1 + vat); // Final Gross Price
 
     return {
         ingredients: usedIngredients,

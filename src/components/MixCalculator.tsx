@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import type { Batch, RawMaterialDefinition, RawMaterialLot, Recipe, Checklist } from '../domain/types';
+import type { Batch, RawMaterialDefinition, RawMaterialLot, Recipe, Checklist, CompanySettings } from '../domain/types';
 import type { CurrentUser } from './App';
 import { storageService } from '../services/storageService';
 import { calculateMix } from '../domain/mixDomain';
@@ -26,6 +26,7 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
   const [materialDefinitions, setMaterialDefinitions] = useState<RawMaterialDefinition[]>([]);
   const [materialLots, setMaterialLots] = useState<RawMaterialLot[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [settings, setSettings] = useState<CompanySettings | null>(null);
   
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('');
   const [hazardPictograms, setHazardPictograms] = useState<string[]>([]);
@@ -44,6 +45,7 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
       setMaterialDefinitions(storageService.getRawMaterials());
       setMaterialLots(storageService.getRawMaterialLots());
       setRecipes(storageService.getRecipes());
+      setSettings(storageService.getCompanySettings());
       // Async init of batch name if empty
       if(!batchName && !loadedBatch) {
           // We need to set a temporary one, real one generated on save or init
@@ -77,9 +79,6 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
             setIsTestBatch(batch.isTestBatch || false);
             setSelectedRecipeId(batch.recipeId);
             setIsLocked(batch.status === 'Готова' || batch.status === 'Брак');
-            
-            // Recalculate just for display (although ingredients are fixed in batch)
-            // For a loaded batch, we trust its stored ingredients, but we can run calc to see current inventory status
         }
         onBatchLoaded();
     }
@@ -87,9 +86,9 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
 
   const handleCalculate = () => {
       const recipe = recipes.find(r => r.id === selectedRecipeId);
-      if (!recipe) return;
+      if (!recipe || !settings) return;
       
-      const result = calculateMix(recipe, tabletCount, targetTabletWeight, materialDefinitions, materialLots);
+      const result = calculateMix(recipe, tabletCount, targetTabletWeight, materialDefinitions, materialLots, settings);
       setCalculationResult(result);
   };
 
@@ -110,6 +109,8 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
       const recipeIngs = loadedBatch ? loadedBatch.recipeIngredients : (calculationResult?.recipeIngredients || []);
       const finTotalCost = loadedBatch ? loadedBatch.totalCost : (calculationResult?.totalCost || 0);
       const finCostPerTab = loadedBatch ? loadedBatch.costPerTablet : (calculationResult?.costPerTablet || 0);
+      const finCostPerPkg = loadedBatch ? loadedBatch.costPer25gPackage : (calculationResult?.costPer25gPackage || 0);
+      const finSellPrice = loadedBatch ? loadedBatch.recommendedSellPrice : (calculationResult?.recommendedSellPrice || 0);
 
       // Inventory deduction logic
       let deduct = loadedBatch?.isInventoryDeducted || false;
@@ -137,8 +138,8 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
           recipeIngredients: recipeIngs,
           totalCost: finTotalCost,
           costPerTablet: finCostPerTab,
-          costPer25gPackage: finCostPerTab * (25/targetTabletWeight),
-          recommendedSellPrice: (finCostPerTab * (25/targetTabletWeight)) * 1.3,
+          costPer25gPackage: finCostPerPkg,
+          recommendedSellPrice: finSellPrice,
           totalActiveHours: calculationResult?.totalActiveHours || 0,
           createdAt: loadedBatch?.createdAt || new Date().toISOString(),
           hazardPictograms,
@@ -151,7 +152,7 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
           testApprovalOrderNumber: loadedBatch?.testApprovalOrderNumber,
           testApprovedBy: loadedBatch?.testApprovedBy,
           testApprovedAt: loadedBatch?.testApprovedAt,
-          labelDurationMinutesPerTablet: loadedBatch?.labelDurationMinutesPerTablet, // Keep if exists, else undefined
+          labelDurationMinutesPerTablet: loadedBatch?.labelDurationMinutesPerTablet,
           labelDurationMinutesPerTabletOverride: loadedBatch?.labelDurationMinutesPerTabletOverride,
           ufi: DEFAULT_UFI,
           formulationNumber: 123456
@@ -202,21 +203,25 @@ const MixCalculator: React.FC<MixCalculatorProps> = ({ currentUser, batchToLoadI
 
         {calculationResult && (
             <div className="bg-indigo-50 p-4 rounded mb-4 border border-indigo-100">
-                <h3 className="font-bold mb-2 text-indigo-800">Резултати</h3>
+                <h3 className="font-bold mb-2 text-indigo-800">Резултати (Себестойност: {calculationResult.totalCost.toFixed(2)} лв)</h3>
                 {calculationResult.availabilityIssues.length > 0 && <div className="text-red-600 mb-2 font-bold">Внимание: Недостатъчни наличности!</div>}
                 <table className="w-full text-sm">
                     <thead>
-                        <tr className="text-left"><th className="p-1">Съставка</th><th className="text-right p-1">Грамаж</th></tr>
+                        <tr className="text-left"><th className="p-1">Съставка</th><th className="text-right p-1">Грамаж</th><th className="text-right p-1">Цена</th></tr>
                     </thead>
                     <tbody>
                         {calculationResult.ingredients.map(ing => (
                             <tr key={ing.id} className="border-b border-indigo-200">
                                 <td className="p-1">{ing.name}</td>
                                 <td className="text-right p-1">{ing.grams.toFixed(2)} g</td>
+                                <td className="text-right p-1">{ing.price.toFixed(3)} лв</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
+                <div className="mt-2 text-right text-xs text-gray-500">
+                    * Цените са НЕТНИ (без ДДС)
+                </div>
             </div>
         )}
 

@@ -154,17 +154,19 @@ export function getLabelInfo(
 
     // 5. Build Quantity Text
     let quantityText = '';
+    const count = batch.tabletCount;
+    
     if (language === 'bg') {
-        if (batch.tabletCount === 1) {
+        if (count === 1) {
             quantityText = `Количество: 1 бр. таблетка`;
         } else {
-            quantityText = `Количество: ${batch.tabletCount} бр. таблетки`;
+            quantityText = `Количество: ${count} бр. таблетки`;
         }
     } else {
-        if (batch.tabletCount === 1) {
+        if (count === 1) {
             quantityText = `Quantity: 1 tablet`;
         } else {
-            quantityText = `Quantity: ${batch.tabletCount} tablets`;
+            quantityText = `Quantity: ${count} tablets`;
         }
     }
 

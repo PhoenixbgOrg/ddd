@@ -15,7 +15,7 @@ export interface RawMaterialLot {
     expiryDate: string;
     initialGrams: number;
     availableGrams: number;
-    pricePerKg: number;
+    pricePerKg: number; // Always stored as NET price (excluding VAT)
 }
 
 export interface RecipeIngredient {
@@ -66,10 +66,10 @@ export interface Batch {
     recipeIngredients: RecipeIngredient[]; // Snapshot of recipe structure
     
     // Financials
-    totalCost: number;
-    costPerTablet: number;
-    costPer25gPackage: number;
-    recommendedSellPrice: number;
+    totalCost: number; // Total Net Cost
+    costPerTablet: number; // Net Cost per tablet
+    costPer25gPackage: number; // Net Cost per package
+    recommendedSellPrice: number; // Gross Price (Net + Margin + VAT)
     
     // Stats
     totalActiveHours: number;
@@ -118,8 +118,9 @@ export interface ReprintLog {
 
 export interface Product {
     id: string;
+    recipeId?: string; // Links to a Recipe (source of the product name/composition)
     name: string;
-    price: number; // Stored in BGN
+    price: number; // Stored in BGN (Gross price usually)
     barcode: string;
     labelType: string;
 }
@@ -128,6 +129,12 @@ export interface CompanySettings {
     companyName: string;
     companyEmail: string;
     companyPhone: string;
+    
+    // Financial Settings
+    vatRate: number;            // e.g. 0.20 for 20%
+    defaultMargin: number;      // e.g. 0.30 for 30%
+    rawPricesIncludeVat: boolean; // If true, inputs in Lot manager are treated as Gross and converted to Net
+    schemaVersion: number;      // For migration handling
 }
 
 // Helper type for Mix Calculator results

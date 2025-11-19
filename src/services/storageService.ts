@@ -48,9 +48,12 @@ class LocalStorageService implements IStorageService {
         SETTINGS: 'ddd_company_settings',
         COUNTER: 'ddd_batch_counter'
     };
+    
+    private CURRENT_SCHEMA_VERSION = 1;
 
     initializeDefaults(): void {
         try {
+            // 1. Load or Init Data
             const defs = localStorage.getItem(this.KEYS.DEFINITIONS);
             if (!defs || JSON.parse(defs).length === 0) {
                 const { definitions, lots } = ensureDefaultRawMaterialsAndLots();
@@ -58,12 +61,38 @@ class LocalStorageService implements IStorageService {
                 this.saveRawMaterialLots(lots);
             }
             
-            if (!localStorage.getItem(this.KEYS.SETTINGS)) {
-                this.saveCompanySettings({
-                    companyName: 'My Company Ltd.',
-                    companyEmail: 'office@example.com',
-                    companyPhone: '+359 888 123 456'
-                });
+            // 2. Migration / Settings Init
+            let currentSettings: CompanySettings | null = null;
+            try {
+                const stored = localStorage.getItem(this.KEYS.SETTINGS);
+                if (stored) currentSettings = JSON.parse(stored);
+            } catch { /* ignore */ }
+
+            // Default Settings Template
+            const defaultSettings: CompanySettings = {
+                companyName: 'My Company Ltd.',
+                companyEmail: 'office@example.com',
+                companyPhone: '+359 888 123 456',
+                vatRate: 0.20,
+                defaultMargin: 0.30,
+                rawPricesIncludeVat: true,
+                schemaVersion: this.CURRENT_SCHEMA_VERSION
+            };
+
+            if (!currentSettings) {
+                this.saveCompanySettings(defaultSettings);
+            } else {
+                // Migration Logic
+                if (!currentSettings.schemaVersion || currentSettings.schemaVersion < this.CURRENT_SCHEMA_VERSION) {
+                    console.log("Migrating settings to version " + this.CURRENT_SCHEMA_VERSION);
+                    const merged = { ...defaultSettings, ...currentSettings, schemaVersion: this.CURRENT_SCHEMA_VERSION };
+                    // Ensure financial fields exist if they were missing
+                    if (merged.vatRate === undefined) merged.vatRate = 0.20;
+                    if (merged.defaultMargin === undefined) merged.defaultMargin = 0.30;
+                    if (merged.rawPricesIncludeVat === undefined) merged.rawPricesIncludeVat = true;
+                    
+                    this.saveCompanySettings(merged);
+                }
             }
         } catch (e) {
             console.error("Failed to init defaults", e);
@@ -143,13 +172,21 @@ class LocalStorageService implements IStorageService {
             return {
                 companyName: 'My Company Ltd.',
                 companyEmail: 'office@example.com',
-                companyPhone: '+359 888 123 456'
+                companyPhone: '+359 888 123 456',
+                vatRate: 0.20,
+                defaultMargin: 0.30,
+                rawPricesIncludeVat: true,
+                schemaVersion: 1
             };
         } catch {
              return {
                 companyName: 'My Company Ltd.',
                 companyEmail: 'office@example.com',
-                companyPhone: '+359 888 123 456'
+                companyPhone: '+359 888 123 456',
+                vatRate: 0.20,
+                defaultMargin: 0.30,
+                rawPricesIncludeVat: true,
+                schemaVersion: 1
             };
         }
     }
