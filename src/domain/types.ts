@@ -116,6 +116,14 @@ export interface ReprintLog {
     reason: string;
 }
 
+export interface Product {
+    id: string;
+    name: string;
+    price: number;
+    barcode: string;
+    labelType: string;
+}
+
 // Helper type for Mix Calculator results
 export interface CalculationResult {
     ingredients: BatchIngredient[];

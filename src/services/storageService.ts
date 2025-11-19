@@ -1,5 +1,5 @@
 
-import { Batch, RawMaterialDefinition, RawMaterialLot, Recipe, ReprintLog } from '../domain/types';
+import { Batch, RawMaterialDefinition, RawMaterialLot, Recipe, ReprintLog, Product } from '../domain/types';
 import { ensureDefaultRawMaterialsAndLots } from '../config/dataDefaults';
 
 // Interface defining the contract for any storage provider
@@ -24,6 +24,10 @@ export interface IStorageService {
     getReprintLogs(): ReprintLog[];
     saveReprintLogs(logs: ReprintLog[]): void;
     
+    // Products
+    getProducts(): Product[];
+    saveProducts(products: Product[]): void;
+    
     // Init
     initializeDefaults(): void;
 }
@@ -36,6 +40,7 @@ class LocalStorageService implements IStorageService {
         RECIPES: 'ddd_recipes',
         BATCHES: 'ddd_batches',
         LOGS: 'ddd_reprint_logs',
+        PRODUCTS: 'ddd_products',
         COUNTER: 'ddd_batch_counter'
     };
 
@@ -105,6 +110,17 @@ class LocalStorageService implements IStorageService {
     saveReprintLogs(logs: ReprintLog[]): void {
         localStorage.setItem(this.KEYS.LOGS, JSON.stringify(logs));
         window.dispatchEvent(new StorageEvent('storage', { key: this.KEYS.LOGS }));
+    }
+    
+    getProducts(): Product[] {
+        try {
+            return JSON.parse(localStorage.getItem(this.KEYS.PRODUCTS) || '[]');
+        } catch { return []; }
+    }
+
+    saveProducts(products: Product[]): void {
+        localStorage.setItem(this.KEYS.PRODUCTS, JSON.stringify(products));
+        window.dispatchEvent(new StorageEvent('storage', { key: this.KEYS.PRODUCTS }));
     }
 
     // Helper for Batch ID generation
