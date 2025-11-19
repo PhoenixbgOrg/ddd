@@ -1,6 +1,6 @@
 
-import { Batch, RawMaterialDefinition, RawMaterialLot, Recipe, ReprintLog, Product, CompanySettings } from '../domain/types';
-import { ensureDefaultRawMaterialsAndLots } from '../config/dataDefaults';
+import { Batch, RawMaterialDefinition, RawMaterialLot, Recipe, ReprintLog, Product, CompanySettings } from '../types';
+import { ensureDefaultRawMaterialsAndLots } from '../dataDefaults';
 
 // Interface defining the contract for any storage provider
 export interface IStorageService {

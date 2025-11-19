@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import type { Batch, ReprintLog, RawMaterialDefinition, Recipe } from '../domain/types';
+import type { Batch, ReprintLog, RawMaterialDefinition, Recipe, CompanySettings } from '../domain/types';
 import type { CurrentUser } from './App';
 import { storageService } from '../services/storageService';
 import { getLabelInfo, formatIngredients } from '../domain/labelDomain';
@@ -27,10 +28,13 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
   const [footerText, setFooterText] = useState(DEFAULT_FOOTER_TEXT);
   const [labelCount, setLabelCount] = useState(10);
   const [status, setStatus] = useState('');
+  const [showPrice, setShowPrice] = useState(false);
 
   const [savedBatches, setSavedBatches] = useState<Batch[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [materialDefinitions, setMaterialDefinitions] = useState<RawMaterialDefinition[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings>({ companyName: '', companyEmail: '', companyPhone: '' });
+  
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [loadedBatch, setLoadedBatch] = useState<Batch | null>(null);
@@ -45,12 +49,13 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
       setSavedBatches(storageService.getBatches());
       setMaterialDefinitions(storageService.getRawMaterials());
       setRecipes(storageService.getRecipes());
+      setCompanySettings(storageService.getCompanySettings());
   }, []);
 
   useEffect(() => {
     loadData();
     const handleStorageUpdate = (event: StorageEvent) => {
-        if (['ddd_batches', 'ddd_reprint_logs', 'ddd_raw_material_definitions', 'ddd_recipes'].includes(event.key || '')) {
+        if (['ddd_batches', 'ddd_reprint_logs', 'ddd_raw_material_definitions', 'ddd_recipes', 'ddd_company_settings'].includes(event.key || '')) {
             loadData();
         }
     };
@@ -135,6 +140,16 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
         return;
     }
     
+    const companyInfo = [
+        companySettings.companyName,
+        companySettings.companyPhone,
+        companySettings.companyEmail
+    ].filter(Boolean).join(' | ');
+
+    const priceInfo = showPrice && loadedBatch.recommendedSellPrice 
+        ? `<div style="margin-top: 1mm; font-weight: bold; font-size: 8pt;">Цена: ${loadedBatch.recommendedSellPrice.toFixed(2)} лв.</div>` 
+        : '';
+
     const styles = `
       <style>
         @page { 
@@ -182,6 +197,8 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
         .lang-divider { border: 0; border-top: 1.5px dashed #000; margin: 1.5mm 0; }
         
         .english-content h1 { font-size: 10.5pt; font-weight: 900; margin: 0 0 1mm 0; }
+        
+        .footer-company { font-size: 6pt; text-align: center; margin-top: auto; padding-top: 2mm; border-top: 1px solid #ccc; }
       </style>`;
 
     const { batchName: bName, tabletCount: tCount, tabletWeight: tWeight, hazardPictograms, ufi } = loadedBatch;
@@ -240,6 +257,8 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
                     <p class="ufi">UFI: ${ufi || DEFAULT_UFI}</p>
                     <p>Срок на годност: до ${expDate} (при ненарушена вакуумна опаковка).</p>
                     </div>
+                    
+                    ${priceInfo}
                 </div>
             </div>
 
@@ -276,6 +295,10 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
                     <p>Best before: ${expDate} (while the vacuum packaging remains intact).</p>
                     </div>
                 </div>
+            </div>
+            
+            <div class="footer-company">
+                ${companyInfo ? companyInfo : footerText}
             </div>
         </div>
     `).join('');
@@ -346,6 +369,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
            <div className="mt-3">
             <label className="block text-sm mb-1 font-medium text-gray-600">Текст в долния ред (footer)</label>
             <input type="text" value={footerText} onChange={e => setFooterText(e.target.value)} className="w-full p-2 rounded border border-gray-300 text-xs"/>
+             <p className="text-xs text-gray-500 mt-1">Ако има въведени данни за фирма в Админ панела, те ще се покажат автоматично най-отдолу.</p>
           </div>
         </div>
 
@@ -364,6 +388,9 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
                  {previewInfoBg.hasAllergens && <p className="mt-1">⚠ – потенциален алерген</p>}
                  <p><strong>UFI:</strong> {loadedBatch.ufi}</p>
                  <p><strong>Срок на годност:</strong> до {expDate}</p>
+                 {showPrice && loadedBatch.recommendedSellPrice && (
+                    <p className="mt-1 font-bold">Цена: {loadedBatch.recommendedSellPrice.toFixed(2)} лв.</p>
+                 )}
 
                 <hr className="my-2 border-dashed"/>
 
@@ -391,13 +418,19 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({ currentUser }) => {
                     <label className="block text-sm mb-1 font-medium text-gray-600">Брой етикети</label>
                     <input type="number" value={labelCount} onChange={e => setLabelCount(parseInt(e.target.value) || 1)} className="w-full p-2 rounded border border-gray-300" min={1} max={200}/>
                 </div>
-                <div className="flex items-center gap-2">
-                     <input id="test-sample-check" type="checkbox" checked={isBatchMarkedAsTest} disabled className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"/>
-                    <label htmlFor="test-sample-check" className="text-sm font-medium text-gray-700">
-                        Тестова партида
-                        {isBatchMarkedAsTest && !isTestBatchApproved && <span className="text-red-600 ml-1">(чака одобрение)</span>}
-                        {isTestBatchApproved && <span className="text-green-600 ml-1">(одобрена)</span>}
-                    </label>
+                <div className="flex flex-col gap-2 justify-center">
+                     <div className="flex items-center gap-2">
+                        <input id="show-price-check" type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"/>
+                        <label htmlFor="show-price-check" className="text-sm font-medium text-gray-700">Покажи цена на етикета</label>
+                     </div>
+                     <div className="flex items-center gap-2">
+                         <input id="test-sample-check" type="checkbox" checked={isBatchMarkedAsTest} disabled className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"/>
+                        <label htmlFor="test-sample-check" className="text-sm font-medium text-gray-700">
+                            Тестова партида
+                            {isBatchMarkedAsTest && !isTestBatchApproved && <span className="text-red-600 ml-1">(чака одобрение)</span>}
+                            {isTestBatchApproved && <span className="text-green-600 ml-1">(одобрена)</span>}
+                        </label>
+                    </div>
                 </div>
             </div>
              <div className="flex justify-end gap-2 mt-4">

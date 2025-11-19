@@ -104,3 +104,17 @@ export interface Recipe {
     labelDurationMinutesPerTablet?: number; // Default burn time per tablet (minutes)
     labelVariantNameEn?: string;            // English variant name base (e.g. "Greek Recipe")
 }
+
+export interface Product {
+    id: string;
+    name: string;
+    price: number; // Stored in BGN
+    barcode: string;
+    labelType: string;
+}
+
+export interface CompanySettings {
+    companyName: string;
+    companyEmail: string;
+    companyPhone: string;
+}

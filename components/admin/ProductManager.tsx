@@ -101,11 +101,6 @@ const ProductManager: React.FC = () => {
         alert("Настройките са запазени.");
     };
 
-    const getSafePriceDisplay = () => {
-        const val = parseFloat(form.priceBgn.replace(',', '.'));
-        return isNaN(val) ? '0.00' : val.toFixed(2);
-    }
-
     const handlePrintLabel = () => {
         const printWindow = window.open('', '', 'width=600,height=800');
         if (!printWindow) {
@@ -115,9 +110,6 @@ const ProductManager: React.FC = () => {
 
         const priceVal = parseFloat(form.priceBgn.replace(',', '.'));
         const priceDisplay = isNaN(priceVal) ? '0.00' : priceVal.toFixed(2);
-        const eurDisplay = isNaN(priceVal) ? '0.00' : (priceVal / FIXED_RATE).toFixed(2);
-        
-        const companyNameDisplay = settings.companyName ? settings.companyName : 'ИМЕ НА ФИРМА';
         
         const styles = `
             <style>
@@ -147,7 +139,7 @@ const ProductManager: React.FC = () => {
                 .barcode-lines { height: 12mm; background: repeating-linear-gradient(90deg, black, black 2px, white 2px, white 4px); width: 70%; margin: 0 auto 1mm auto; }
                 .barcode-text { font-family: monospace; font-size: 12pt; letter-spacing: 2px; }
                 
-                .footer { width: 100%; border-top: 1px solid #ccc; padding-top: 2mm; font-size: 8pt; color: #555; margin-top: 3mm;}
+                .footer { width: 100%; border-top: 1px solid #ccc; pt: 2mm; font-size: 8pt; color: #555; margin-top: 3mm;}
             </style>
         `;
         
@@ -157,7 +149,7 @@ const ProductManager: React.FC = () => {
             <body>
                 <div class="container">
                     <div class="header">
-                        <div class="company-name">${companyNameDisplay}</div>
+                        <div class="company-name">${settings.companyName || 'COMPANY NAME'}</div>
                     </div>
                     
                     <div class="product-name">${form.name}</div>
@@ -167,7 +159,7 @@ const ProductManager: React.FC = () => {
                     <div class="price-box">
                         <div class="price-label">ЦЕНА / PRICE</div>
                         <div class="price-main">${priceDisplay} <span style="font-size: 20pt;">ЛВ.</span></div>
-                        <div class="price-sub">${eurDisplay} EUR</div>
+                        <div class="price-sub">${liveEur} EUR</div>
                     </div>
                     
                     ${form.barcode ? `
@@ -198,6 +190,11 @@ const ProductManager: React.FC = () => {
         `px-4 py-2 font-medium rounded-t-lg transition-colors border-t border-x ${
             activeTab === tab ? 'bg-white text-blue-600 border-gray-200 -mb-px' : 'bg-gray-100 text-gray-500 border-transparent hover:bg-gray-200'
         }`;
+
+    const getSafePriceDisplay = () => {
+        const val = parseFloat(form.priceBgn.replace(',', '.'));
+        return isNaN(val) ? '0.00' : val.toFixed(2);
+    }
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 min-h-[600px]">
@@ -331,7 +328,7 @@ const ProductManager: React.FC = () => {
                                 
                                 {/* 1. Header: Company */}
                                 <div className="w-full border-b border-gray-400 pb-2 mb-4">
-                                    <h2 className="text-xl font-bold text-gray-800 uppercase">{settings.companyName || 'ИМЕ НА ФИРМА'}</h2>
+                                    <h2 className="text-xl font-bold text-gray-800 uppercase">{settings.companyName || 'Company Name'}</h2>
                                 </div>
 
                                 {/* 2. Product Name */}

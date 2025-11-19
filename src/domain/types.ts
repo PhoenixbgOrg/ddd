@@ -119,9 +119,15 @@ export interface ReprintLog {
 export interface Product {
     id: string;
     name: string;
-    price: number;
+    price: number; // Stored in BGN
     barcode: string;
     labelType: string;
+}
+
+export interface CompanySettings {
+    companyName: string;
+    companyEmail: string;
+    companyPhone: string;
 }
 
 // Helper type for Mix Calculator results
